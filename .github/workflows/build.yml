@@ -71,7 +71,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          # Zugang nur fuer diesen Schritt in einer eigenen Docker Konfiguration (ohne docker login)
+          export DOCKER_CONFIG="${RUNNER_TEMP}/docker-ghcr"
+          mkdir -p "$DOCKER_CONFIG"
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          AUTH=$(printf '%s:%s' "${GITHUB_ACTOR}" "$GH_TOKEN" | base64 -w0)
+          printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' "$AUTH" > "$DOCKER_CONFIG/config.json"
           STAND=$(date -u +%Y%m%d)
           for TAG in "${PGV}-alpine" "${MAJOR}-alpine" "${PGV}-alpine-${STAND}"; do
             docker tag "local/pg:${MAJOR}" "${IMAGE}:${TAG}"
@@ -79,4 +84,3 @@ jobs:
           done
           DIGEST=$(docker image inspect -f '{{index .RepoDigests 0}}' "${IMAGE}:${PGV}-alpine")
           echo "Veroeffentlicht: ${IMAGE}:${PGV}-alpine, ${MAJOR}-alpine, ${PGV}-alpine-${STAND} als ${DIGEST}" >> "$GITHUB_STEP_SUMMARY"
-          docker logout ghcr.io
