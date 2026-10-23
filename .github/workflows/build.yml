@@ -1,0 +1,82 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        major: ['16', '17']
+    env:
+      IMAGE: ghcr.io/amadudl/postgres-ohne-gosu
+      TRIVY: aquasec/trivy:0.76.1
+      MAJOR: ${{ matrix.major }}
+    steps:
+      - name: Quelle holen
+        run: |
+          git init -q .
+          git fetch -q --depth 1 "https://github.com/${GITHUB_REPOSITORY}" "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
+
+      - name: Basisabbild festlegen
+        run: |
+          docker pull -q "postgres:${MAJOR}-alpine"
+          BASE=$(docker image inspect -f '{{index .RepoDigests 0}}' "postgres:${MAJOR}-alpine")
+          PGV=$(docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$BASE" | sed -n 's/^PG_VERSION=//p')
+          case "$PGV" in "${MAJOR}".*) ;; *) echo "PG_VERSION $PGV passt nicht zu ${MAJOR}"; exit 1 ;; esac
+          echo "BASE=$BASE" >> "$GITHUB_ENV"
+          echo "PGV=$PGV" >> "$GITHUB_ENV"
+          echo "Basis $BASE, PostgreSQL $PGV" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Bauen
+        run: |
+          docker build --pull=false --build-arg "BASE=$BASE" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${PGV}" \
+            --label "org.opencontainers.image.base.name=${BASE}" \
+            --label "org.opencontainers.image.description=PostgreSQL ${PGV} Alpine ohne gosu, laeuft als postgres (uid 70)" \
+            -t "local/pg:${MAJOR}" .
+
+      - name: Pruefen
+        run: sh test.sh "$BASE" "local/pg:${MAJOR}"
+
+      - name: Scannen
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY" image --quiet --scanners vuln \
+            --format table "local/pg:${MAJOR}"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY" image --quiet --scanners vuln \
+            --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "local/pg:${MAJOR}"
+
+      - name: Veroeffentlichen
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          STAND=$(date -u +%Y%m%d)
+          for TAG in "${PGV}-alpine" "${MAJOR}-alpine" "${PGV}-alpine-${STAND}"; do
+            docker tag "local/pg:${MAJOR}" "${IMAGE}:${TAG}"
+            docker push -q "${IMAGE}:${TAG}"
+          done
+          DIGEST=$(docker image inspect -f '{{index .RepoDigests 0}}' "${IMAGE}:${PGV}-alpine")
+          echo "Veroeffentlicht: ${IMAGE}:${PGV}-alpine, ${MAJOR}-alpine, ${PGV}-alpine-${STAND} als ${DIGEST}" >> "$GITHUB_STEP_SUMMARY"
+          docker logout ghcr.io
