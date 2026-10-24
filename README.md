@@ -12,8 +12,8 @@ Das offizielle Abbild enthält `gosu` 1.19, gebaut mit Go 1.24.6. Trivy meldet d
 
 | Tag | Bedeutung |
 | --- | --- |
-| `16.15-alpine`, `17.11-alpine` | Patchversion, wird wöchentlich mit neuen Alpine Updates neu gebaut. Diesen Tag in Coolify und Compose verwenden. |
-| `16-alpine`, `17-alpine` | Hauptversion, folgt jeder neuen Patchversion. |
+| `15.19-alpine`, `16.15-alpine`, `17.11-alpine` | Patchversion, wird wöchentlich mit neuen Alpine Updates neu gebaut. Diesen Tag in Coolify und Compose verwenden. |
+| `15-alpine`, `16-alpine`, `17-alpine` | Hauptversion, folgt jeder neuen Patchversion. |
 | `16.15-alpine-JJJJMMTT` | Unveränderlicher Stand eines Laufs, für den Rückweg. |
 
 ## Bau und Prüfung
@@ -40,3 +40,5 @@ Rückweg: Abbild zurück auf das vorige offizielle Abbild setzen und neu starten
 
 - GitHub schaltet geplante Läufe in öffentlichen Repos nach 60 Tagen ohne Aktivität ab. Dann bleiben die Alpine Updates aus, bis der Lauf wieder aktiviert oder von Hand gestartet wird.
 - Für einen Wechsel der Hauptversion (etwa 16 auf 17) reicht kein Abbildtausch, dafür braucht es `pg_upgrade` oder Dump und Restore.
+
+- Hauptversion 15 gibt es für `coolify-db` (Coolify Plattform, TK-119). Coolify zieht bei jedem Update alle Abbilder aus `docker-compose.custom.yml` neu, deshalb muss das Abbild in GHCR liegen; ein nur lokal geladenes Abbild bricht das Coolify Update ab.

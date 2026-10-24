@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        major: ['16', '17']
+        major: ['15', '16', '17']
     env:
       IMAGE: ghcr.io/amadudl/postgres-ohne-gosu
       TRIVY: aquasec/trivy:0.76.1
